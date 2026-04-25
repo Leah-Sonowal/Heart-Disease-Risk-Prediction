@@ -1,127 +1,196 @@
+#import libraries
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import LabelEncoder, StandardScaler
-from sklearn.model_selection import train_test_split
-import seaborn as sns
-import matplotlib.pyplot as plt
-print("Program started")
-cardio = pd.read_csv("cardio.csv", sep=";") 
-framingham = pd.read_csv("framingham.csv")
+from sklearn.preprocessing import StandardScaler
+from sklearn.impute import SimpleImputer
+from sklearn.ensemble import IsolationForest
+from sklearn.feature_selection import SelectKBest, f_classif
+
+
+# LOAD DATA
 uci = pd.read_csv("uci_heart.csv")
-print("\nCardio Shape:", cardio.shape)
-print("Framingham Shape:", framingham.shape)
-print("UCI Shape:", uci.shape)
-
-cardio.fillna(cardio.mean(numeric_only=True), inplace=True)
-framingham.fillna(framingham.mean(numeric_only=True), inplace=True)
-uci.fillna(uci.mean(numeric_only=True), inplace=True)
-print("\nHandling missing values done")
- 
-cardio.drop_duplicates(inplace=True)
-framingham.drop_duplicates(inplace=True)
-uci.drop_duplicates(inplace=True)
-print("\nRemoving duplicates done")
-
-cardio["age_years"] = cardio["age"] / 365
-cardio["BMI"] = cardio["weight"] / ((cardio["height"]/100)**2)
-print("\nFeature engineering done")
-
-def remove_outliers(df): 
-    Q1 = df.quantile(0.25) 
-    Q3 = df.quantile(0.75)
-    IQR = Q3 - Q1
-    
-    df_clean = df[~((df < (Q1 - 1.5 * IQR)) | (df > (Q3 + 1.5 * IQR))).any(axis=1)]
-    return df_clean
-
-cardio = remove_outliers(cardio)
-print("After outlier removal shape:", cardio.shape)
+fr = pd.read_csv("framingham.csv")
+cardio = pd.read_csv("cardio.csv", sep=";")
 
 
-for df, name, target in [
-    (cardio, "Cardio Dataset", "cardio"),
-    (framingham, "Framingham Dataset", "TenYearCHD"),
-    (uci, "UCI Dataset", "target")
-]:
-    print(f"\nEDA for {name}\n")
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(df.corr(), cmap="coolwarm", annot=False)
-    plt.title(f"{name} - Correlation Heatmap")
-    plt.tight_layout()
-    plt.show()
-    df.hist(figsize=(14, 12))
-    plt.suptitle(f"{name} - Feature Distributions", fontsize=16)
-    plt.tight_layout()
-    plt.show()
-    plt.figure(figsize=(6, 4))
-    sns.countplot(x=target, data=df)
-    plt.title(f"{name} - Target Distribution ({target})")
-    plt.xlabel("Target Class")
-    plt.ylabel("Count")
-    plt.tight_layout()
-    plt.show()
+# DATA INTEGRATION
+# CARDIO 
+cardio['age'] = cardio['age'] / 365 # because age was in days so here we are converting it to years
+cardio['gender'] = cardio['gender'].map({1:0, 2:1}) #earlier gender was defined as 1:female and 2:male so we are converting it to 0:female and 1:male
+cardio['BMI'] = cardio['weight'] / ((cardio['height']/100)**2) #calculating bmi from height and weight
+cardio['cholesterol'] = cardio['cholesterol'].map({
+    1: 180,
+    2: 220,
+    3: 260
+}) #because it was given level wise so we have to convert into numeric format
+cardio['gluc'] = cardio['gluc'].map({
+    1: 85,
+    2: 110,
+    3: 140
+})
 
- 
-def encode_data(df):
-    categorical_cols = df.select_dtypes(include=['object']).columns
-    df = pd.get_dummies(df, columns=categorical_cols, drop_first=True)
-    return df
-cardio = encode_data(cardio)
-framingham = encode_data(framingham)
-uci = encode_data(uci)
-print("\nEncoding done")
- 
-def select_features(df, target, threshold=0.1):
-    corr = df.corr()[target].abs().sort_values(ascending=False)
-    print(f"\nCorrelation with {target}:\n", corr)
-    selected = corr[corr > threshold].index.tolist()
-    if target in selected:
-        selected.remove(target)
-    print(f"\nSelected features for {target}: {selected}")
-    X = df[selected]
-    y = df[target]
-    return X, y
-X_cardio, y_cardio = select_features(cardio, "cardio")
-X_fram, y_fram = select_features(framingham, "TenYearCHD")
-X_uci, y_uci = select_features(uci, "target")
-print("\nFeature selection done")
- 
+cardio_new = pd.DataFrame({
+    'age': cardio['age'],
+    'gender': cardio['gender'],
+    'BMI': cardio['BMI'],
+    'sysBP': cardio['ap_hi'],
+    'diaBP': cardio['ap_lo'],
+    'cholesterol': cardio['cholesterol'],
+    'glucose': cardio['gluc'],
+    'smoke': cardio['smoke'],
+    'alcohol': cardio['alco'],
+    'active': cardio['active'],
+    'BPMeds': np.nan,
+    'stroke': np.nan,
+    'hypertension': np.nan,
+    'diabetes': np.nan,
+    'heartRate': np.nan,
+    'cp': np.nan,
+    'restecg': np.nan,
+    'thalach': np.nan,
+    'exang': np.nan,
+    'oldpeak': np.nan,
+    'slope': np.nan,
+    'ca': np.nan,
+    'thal': np.nan,
+    'target': cardio['cardio']
+})
+
+# FRAMINGHAM
+fr_new = pd.DataFrame({
+    'age': fr['age'],
+    'gender': fr['male'],
+    'BMI': fr['BMI'],
+    'sysBP': fr['sysBP'],
+    'diaBP': fr['diaBP'],
+    'cholesterol': fr['totChol'],
+    'glucose': fr['glucose'],
+    'smoke': fr['currentSmoker'],
+    'alcohol': np.nan,
+    'active': np.nan,
+    'BPMeds': fr['BPMeds'],
+    'stroke': fr['prevalentStroke'],
+    'hypertension': fr['prevalentHyp'],
+    'diabetes': fr['diabetes'],
+    'heartRate': fr['heartRate'],
+    'cp': np.nan,
+    'restecg': np.nan,
+    'thalach': np.nan,
+    'exang': np.nan,
+    'oldpeak': np.nan,
+    'slope': np.nan,
+    'ca': np.nan,
+    'thal': np.nan,
+    'target': fr['TenYearCHD']
+})
+
+# UCI
+uci['fbs'] = uci['fbs'].map({
+    0: 90,
+    1: 130
+})
+uci_new = pd.DataFrame({
+    'age': uci['age'],
+    'gender': uci['sex'],
+    'BMI': np.nan,
+    'sysBP': uci['trestbps'],
+    'diaBP': np.nan,
+    'cholesterol': uci['chol'],
+    'glucose': uci['fbs'],
+    'smoke': np.nan,
+    'alcohol': np.nan,
+    'active': np.nan,
+    'BPMeds': np.nan,
+    'stroke': np.nan,
+    'hypertension': np.nan,
+    'diabetes': np.nan,
+    'heartRate': np.nan,
+    'cp': uci['cp'],
+    'restecg': uci['restecg'],
+    'thalach': uci['thalach'],
+    'exang': uci['exang'],
+    'oldpeak': uci['oldpeak'],
+    'slope': uci['slope'],
+    'ca': uci['ca'],
+    'thal': uci['thal'],
+    'target': uci['target']
+})
+#We don’t rely on implicit NaN because it happens automatically during merging
+#which can be unclear and harder to track.
+#Explicit NaN is better because it clearly shows missing data from the beginning 
+#and keeps the structure consistent and easy to understand
+
+
+
+# COMBINE DATASETS
+df = pd.concat([cardio_new, fr_new, uci_new], ignore_index=True)
+#resets the index and creates a new continuous numbering after combining datasets.
+#Index is a label or number used to uniquely identify each row in a dataset.
+
+
+# CLEANING-Drop duplicates rows
+df.drop_duplicates(inplace=True)
+
+
+# MISSING VALUE HANDLING
+# Numeric columns (continuous)
+num_cols = ['age', 'BMI', 'sysBP', 'diaBP', 'heartRate',
+            'thalach', 'oldpeak', 'cholesterol', 'glucose']
+df[num_cols] = df[num_cols].fillna(df[num_cols].mean())
+# Categorical / binary columns
+cat_cols = ['gender', 'smoke', 'alcohol', 'active',
+            'BPMeds', 'stroke', 'hypertension', 'diabetes',
+            'exang', 'cp', 'restecg', 'slope', 'thal', 'ca']
+for col in cat_cols:
+    df[col] = df[col].fillna(df[col].mode()[0])
+#Mean imputation is suitable only for continuous variables
+#while categorical features should be imputed using mode to preserve data integrity and model accuracy
+
+
+# OUTLIER REMOVAL-isloation forest method is used because we have high dimension data
+iso = IsolationForest(contamination=0.05, random_state=42)
+outliers = iso.fit_predict(df[num_cols])
+df = df[outliers == 1]
+
+
+# ENCODING (ONE HOT)
+ohe_cols = ['cp', 'restecg', 'slope', 'thal']
+df[ohe_cols] = df[ohe_cols].astype(int)
+df = pd.get_dummies(df, columns=ohe_cols, drop_first=True)
+dummy_cols = [col for col in df.columns if df[col].dtype == bool]
+df[dummy_cols] = df[dummy_cols].astype(int)
+
+binary_cols = ['gender', 'smoke', 'alcohol', 'active',
+               'BPMeds', 'stroke', 'hypertension', 'diabetes', 'exang', 'ca']
+df[binary_cols] = df[binary_cols].astype(int)
+
+# STANDARDIZATION
+target = df['target']
+num_cols = [
+    'age','BMI','sysBP','diaBP',
+    'cholesterol','heartRate',
+    'thalach','oldpeak','glucose'
+]
 scaler = StandardScaler()
-X_cardio_scaled = pd.DataFrame(
-    scaler.fit_transform(X_cardio),
-    columns=X_cardio.columns
-)
-X_fram_scaled = pd.DataFrame(
-    scaler.fit_transform(X_fram),
-    columns=X_fram.columns
-)
-X_uci_scaled = pd.DataFrame(
-    scaler.fit_transform(X_uci),
-    columns=X_uci.columns
-)
-print("\nScaling done")
- 
-print("\nTrain test split\n")
-Xc_train, Xc_test, yc_train, yc_test = train_test_split(
-    X_cardio_scaled, y_cardio,
-    test_size=0.2,
-    random_state=42,
-    stratify=y_cardio
-)
-Xf_train, Xf_test, yf_train, yf_test = train_test_split(
-    X_fram_scaled, y_fram,
-    test_size=0.2,
-    random_state=42,
-    stratify=y_fram
-)
-Xu_train, Xu_test, yu_train, yu_test = train_test_split(
-    X_uci_scaled, y_uci,
-    test_size=0.2,
-    random_state=42,
-    stratify=y_uci
-)
-print("Cardio train:", Xc_train.shape, "test:", Xc_test.shape)
-print("Framingham train:", Xf_train.shape, "test:", Xf_test.shape)
+df[num_cols] = scaler.fit_transform(df[num_cols])
+df_scaled = df.copy()
+df_scaled['target'] = target.values
+
+
+# FEATURE SELECTION
+#selector = SelectKBest(score_func=f_classif, k=18) #here the value of k will determine how many features to be selected which will be done based on algo we choosed
+#X_new = selector.fit_transform(df_scaled.drop('target', axis=1), df_scaled['target'])
+#selected_cols = df_scaled.drop('target', axis=1).columns[selector.get_support()]
+#final_df = pd.DataFrame(X_new, columns=selected_cols)
+#final_df['target'] = df_scaled['target'].values
+final_df = df_scaled.copy()
+
+
+# SAVE FINAL DATASET
+final_df.to_csv("final_unified_dataset.csv", index=False)
+print("Final dataset created successfully!")
+print(f"Shape: {final_df.shape}")
+print(final_df.head())
 print("UCI train:", Xu_train.shape, "test:", Xu_test.shape)
 
 
