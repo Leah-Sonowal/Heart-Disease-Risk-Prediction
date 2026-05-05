@@ -1,12 +1,7 @@
 """
 ===========================================================================
 HEART DISEASE RISK PREDICTION SYSTEM
-A Data Warehousing and Mining Project
-National Institute of Technology Sikkim
 
-Authors: Anuska Mandal, Leah Sonowal, Shandhiya Chhetri, Sana Tasneem
-Subject: Data Warehousing and Mining Laboratory (CS14211)
-Assigned by: Prof. Krishna Kumar
 
 Pipeline Overview:
   1. Load Data         – Read 3 raw CSV datasets
@@ -74,22 +69,17 @@ from sklearn.metrics import(
     mean_squared_error, r2_score
 )
 
-# mlxtend – association rule mining (Apriori)
-# Install if missing:  pip install mlxtend
 from mlxtend.frequent_patterns import apriori, association_rules
 from mlxtend.preprocessing import TransactionEncoder
 
 
-# ===========================================================================
 # SECTION 1 – LOAD DATA
-# ===========================================================================
+
 print("=" * 60)
 print("SECTION 1 – LOADING RAW DATA")
 print("=" * 60)
 
-# Read each of the three source CSV files.
-# The sep=";" argument tells pandas that the cardio file uses semicolons
-# as delimiters instead of the default comma.
+
 uci    = pd.read_csv("uci_heart.csv")
 fr     = pd.read_csv("framingham.csv")
 cardio = pd.read_csv("cardio.csv", sep=";")
@@ -99,19 +89,14 @@ print(f"Framingham  : {len(fr)}")
 print(f"Cardio      : {len(cardio)}")
 
 
-# ===========================================================================
 # SECTION 2 – DATA INTEGRATION (ETL – TRANSFORM PHASE)
-# Each source dataset has different column names, units, and encodings.
-# We map every source into a single canonical schema with 24 columns.
-# ===========================================================================
 print("\n" + "=" * 60)
 print("SECTION 2 – DATA INTEGRATION")
 print("=" * 60)
 
-# ---------------------------------------------------------------------------
+
 # 2A. CARDIO DATASET
-# ---------------------------------------------------------------------------
-# age: originally stored in DAYS → convert to years by dividing by 365
+
 cardio["age"] = cardio["age"] / 365
 
 # gender: original encoding  1 = female, 2 = male
@@ -132,8 +117,6 @@ cardio["gluc"] = cardio["gluc"].map({1: 85, 2: 110, 3: 140})
 
 # Build cardio_new with the canonical 24-column layout.
 # Columns that the cardio dataset does NOT contain are set to np.nan (missing).
-# Explicit NaN is BETTER than implicit because it makes missingness visible and
-# consistent from the very beginning of the pipeline.
 cardio_new = pd.DataFrame({
     "age":         cardio["age"],
     "gender":      cardio["gender"],
@@ -162,9 +145,7 @@ cardio_new = pd.DataFrame({
     "target":      cardio["cardio"],   # 1 = has cardiovascular disease
 })
 
-# ---------------------------------------------------------------------------
 # 2B. FRAMINGHAM DATASET
-# ---------------------------------------------------------------------------
 # BMI, sysBP, diaBP, cholesterol, glucose, heartRate already in correct units.
 # 'male' column (1=male, 0=female) already matches our canonical gender coding.
 # 'TenYearCHD' = 1 if the patient developed coronary heart disease in 10 years.
@@ -196,9 +177,7 @@ fr_new = pd.DataFrame({
     "target":      fr["TenYearCHD"],
 })
 
-# ---------------------------------------------------------------------------
 # 2C. UCI HEART DISEASE DATASET
-# ---------------------------------------------------------------------------
 # fbs (fasting blood sugar): originally a binary flag (0 = ≤120 mg/dL, 1 = >120)
 # We convert to a representative numeric glucose value for consistency.
 uci["fbs"] = uci["fbs"].map({0: 90, 1: 130})
@@ -231,9 +210,7 @@ uci_new = pd.DataFrame({
 })
 
 
-# ===========================================================================
 # SECTION 3 – COMBINE & CLEAN
-# ===========================================================================
 print("\n" + "=" * 60)
 print("SECTION 3 – COMBINE, DEDUPLICATE, IMPUTE, OUTLIER REMOVAL")
 print("=" * 60)
