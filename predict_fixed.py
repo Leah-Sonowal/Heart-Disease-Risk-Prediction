@@ -1,7 +1,6 @@
 """
-===========================================================================
+
 HEART DISEASE RISK PREDICTOR  –  Interactive Terminal Tool
-===========================================================================
 This script loads the final_unified_dataset.csv produced by the main
 pipeline (heart_disease_project.py), trains a Random Forest classifier on
 it, and then walks any user through a series of plain-English questions to
@@ -10,13 +9,6 @@ collect their health data.  It then:
   • Runs the model and reports the predicted risk (Low / Medium / High)
   • Prints a probability bar and a brief explanation of the top risk factors
 
-Usage:
-    python predict.py
-
-Requirements:
-    pip install pandas numpy scikit-learn
-    (final_unified_dataset.csv must exist – run heart_disease_project.py first)
-===========================================================================
 """
 
 import os
@@ -31,7 +23,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 
-# ── ANSI colour helpers (work on most Unix terminals and Windows 10+) ──────
+# ── ANSI colour helpers ──────
 RESET  = "\033[0m"
 BOLD   = "\033[1m"
 RED    = "\033[91m"
@@ -62,11 +54,9 @@ def banner():
     print()
 
 
-# ===========================================================================
 # INPUT HELPERS
 # Every helper below validates the user's input and keeps asking until a
-# valid value is provided.  This prevents crashes from bad input.
-# ===========================================================================
+# valid value is provided.  This prevents crashes from incorrect or invalid input.
 
 def ask_float(prompt, lo, hi, unit=""):
     """
@@ -138,10 +128,8 @@ def section(title):
     print()
 
 
-# ===========================================================================
-# DATA COLLECTION – walk the user through all required fields
-# ===========================================================================
 
+# DATA COLLECTION
 def collect_user_data():
     """
     Interactively collect all feature values from the user.
@@ -156,7 +144,7 @@ def collect_user_data():
     """
     data = {}
 
-    # ── DEMOGRAPHICS ─────────────────────────────────────────────────────
+    # ── DEMOGRAPHICS 
     section("DEMOGRAPHICS")
 
     data["age"] = ask_float("Age", 18, 100, "years")
@@ -173,7 +161,7 @@ def collect_user_data():
         "kg/m²  [weight_kg / height_m²]"
     )
 
-    # ── VITAL SIGNS ───────────────────────────────────────────────────────
+    # ── VITAL SIGNS 
     section("VITAL SIGNS & LAB RESULTS")
 
     data["sysBP"] = ask_float(
@@ -197,14 +185,14 @@ def collect_user_data():
         50, 400, "mg/dL"
     )
 
-    # ── LIFESTYLE ────────────────────────────────────────────────────────
+    # ── LIFESTYLE 
     section("LIFESTYLE")
 
     data["smoke"]   = ask_yn("Do you currently smoke?")
     data["alcohol"] = ask_yn("Do you regularly drink alcohol?")
     data["active"]  = ask_yn("Are you physically active (exercise ≥3×/week)?")
 
-    # ── MEDICAL HISTORY ──────────────────────────────────────────────────
+    # ── MEDICAL HISTORY 
     section("MEDICAL HISTORY")
 
     data["hypertension"] = ask_yn("Have you been diagnosed with hypertension (high BP)?")
@@ -212,11 +200,9 @@ def collect_user_data():
     data["stroke"]       = ask_yn("Have you ever had a stroke?")
     data["BPMeds"]       = ask_yn("Are you currently on blood pressure medication?")
 
-    # ── CLINICAL / ECG (optional but improves accuracy) ──────────────────
-    section("CLINICAL DETAILS  (press Enter to skip each if unsure)")
+    # ── CLINICAL / ECG (optional but improves accuracy) 
+    section("CLINICAL DETAILS ")
 
-    print(clr("  These come from an ECG / stress test.  They are optional –", DIM))
-    print(clr("  leave blank (just press Enter) if you don't have the values.", DIM))
     print()
 
     # Chest pain type (0–3)
@@ -288,11 +274,9 @@ def collect_user_data():
     return data
 
 
-# ===========================================================================
 # FEATURE ENGINEERING
 # Replicate the exact same transformations the main pipeline applies so the
 # model sees inputs in the format it was trained on.
-# ===========================================================================
 
 def build_feature_row(raw, train_columns, scaler, num_cols):
     """
@@ -321,7 +305,7 @@ def build_feature_row(raw, train_columns, scaler, num_cols):
     # Start with a single-row DataFrame of the raw values
     row = pd.DataFrame([raw])
 
-    # ── Apply the same OHE as the main pipeline ───────────────────────────
+    # ── Apply the same OHE as the main pipeline 
     ohe_cols = ["cp", "restecg", "slope", "thal"]
     row[ohe_cols] = row[ohe_cols].astype(int)
     row = pd.get_dummies(row, columns=ohe_cols, drop_first=True)
@@ -346,33 +330,13 @@ def build_feature_row(raw, train_columns, scaler, num_cols):
     # Keep only the training columns in the correct order
     row = row[train_columns]
 
-    # ── Scale continuous columns ──────────────────────────────────────────
+    # ── Scale continuous columns 
     # IMPORTANT: use the SAME scaler fitted on RAW data in index3.py.
     # The scaler was loaded from scaler.pkl and has the original population
     # mean and std.  This converts raw user values into the same z-score
     # space the training data lives in.
-    #
-    # BUG 2 FIX: Three columns — heartRate, thalach, oldpeak — must NOT be
-    # scaled from user input.  Here is why:
-    #   • heartRate is missing in 70 000 cardio rows (99% of the data).
-    #     Those rows were imputed with the mean of only 4 000 Framingham rows,
-    #     so 99% of training values are IDENTICAL.  The StandardScaler then
-    #     sees a std of only ~1.7 bpm instead of a realistic ~12 bpm.
-    #   • thalach (max exercise HR) is missing in 74 700 rows; same collapse
-    #     → std ~1.1 bpm instead of ~22 bpm.
-    #   • oldpeak is missing in 74 700 rows → std ~0.05 instead of ~1.2.
-    #
-    # Consequence: a user entering heartRate=62 gives
-    #   z = (62 − 75.9) / 1.7 = −8.2
-    # The model was trained on z-scores in [−3, +3] for real values.
-    # A z of −8 is a massive extrapolation → every patient lands in the
-    # same tree leaf → constant prediction regardless of input.
-    #
-    # The safe fix is to set these three features to 0.0 (their training
-    # z-score mean) for every prediction.  The model learned almost nothing
-    # from them anyway (feature importance ≈ 0.001–0.009) because 99% of
-    # training rows had the same imputed value.  Forcing z=0 keeps inference
-    # in-distribution without distorting the other features.
+    
+  
     COLLAPSED_COLS = {"heartRate", "thalach", "oldpeak"}
     # Pass ALL num_cols to transform at once — the scaler was fitted on all 9
     # together and requires all 9 column names to be present.
@@ -395,10 +359,8 @@ def build_feature_row(raw, train_columns, scaler, num_cols):
     return row
 
 
-# ===========================================================================
-# RISK DISPLAY
-# ===========================================================================
 
+# RISK DISPLAY
 def probability_bar(prob, width=40):
     """
     Render a simple text progress bar showing the risk probability.
@@ -436,7 +398,7 @@ def display_result(prob, feature_row, train_columns, model):
     print(clr("=" * 62, CYAN))
     print()
 
-    # ── Risk band ─────────────────────────────────────────────────────────
+    # ── Risk band 
     if prob < 0.33:
         band        = "LOW RISK"
         band_colour = GREEN
@@ -482,7 +444,7 @@ def display_result(prob, feature_row, train_columns, model):
         bar = clr("▮" * min(int(abs(score) * 200), 20), GREEN)
         print(f"    {feat:<20} {bar}")
 
-    # ── General advice ────────────────────────────────────────────────────
+    # ── General advice 
     print()
     print(clr("  ── General Advice ───────────────────────────────────────", CYAN))
     tips = []
@@ -508,11 +470,9 @@ def display_result(prob, feature_row, train_columns, model):
     print()
 
 
-# ===========================================================================
 # MODEL TRAINING
 # We train a Random Forest on the saved final_unified_dataset.csv so the
 # predictor always uses the same cleaned, integrated dataset.
-# ===========================================================================
 
 def load_and_train(csv_path="final_unified_dataset.csv"):
     """
@@ -544,25 +504,7 @@ def load_and_train(csv_path="final_unified_dataset.csv"):
     # Keep only those actually present in the saved CSV
     num_cols = [c for c in num_cols if c in X.columns]
 
-    # FIX: Load the scaler that was fitted on RAW data in index3.py.
-    #
-    # THE BUG THAT WAS HERE:
-    #   The original code called StandardScaler().fit(X[num_cols]) where X
-    #   comes from final_unified_dataset.csv — a file that already contains
-    #   z-scored values (mean≈0, std≈1).  Fitting a new scaler on z-scores
-    #   produces a scaler with mean≈0 and std≈1, so calling
-    #   scaler.transform(raw_user_value) does:
-    #       z = (raw_value - 0) / 1  =  raw_value   (unchanged!)
-    #   A raw age of 55 years is passed directly to a model that was trained
-    #   on z-scores in the range [-3, +3].  The value 55 is a massive outlier
-    #   that falls far outside every decision tree's split thresholds, so ALL
-    #   patients are routed to the same leaf → same constant probability.
-    #
-    # THE FIX:
-    #   index3.py now saves the scaler immediately after fitting it on raw
-    #   data (joblib.dump(scaler, "scaler.pkl")).  We load that file here so
-    #   the SAME mean and std that were used to produce the CSV are applied
-    #   to transform new user input into the same z-score space.
+    # Load the scaler that was fitted on RAW data in index3.py.
     scaler_path = "scaler.pkl"
     if not os.path.exists(scaler_path):
         print(clr(f"\n  ✗  Cannot find '{scaler_path}'.", RED))
@@ -590,11 +532,9 @@ def load_and_train(csv_path="final_unified_dataset.csv"):
     return model, train_columns, scaler, num_cols
 
 
-# ===========================================================================
+
 # MAIN LOOP
 # Allows the user to run multiple predictions in one session.
-# ===========================================================================
-
 def main():
     banner()
 
