@@ -1,8 +1,6 @@
 """
-===========================================================================
+
 HEART DISEASE RISK PREDICTION SYSTEM
-
-
 Pipeline Overview:
   1. Load Data         – Read 3 raw CSV datasets
   2. Data Integration  – Map each dataset to a common schema
@@ -19,16 +17,13 @@ Pipeline Overview:
   11. Regression       – Linear Regression on cholesterol
   12. Clustering       – K-Means (Low / Medium / High risk)
   13. Association Rules – Apriori via mlxtend
-===========================================================================
+
 """
 
-# ---------------------------------------------------------------------------
+
 # SECTION 0 – IMPORTS
-# Every library used in this project is imported here at the top so it is
-# easy to see dependencies at a glance.
-# ---------------------------------------------------------------------------
 import warnings
-warnings.filterwarnings("ignore")          # Keep console output clean
+warnings.filterwarnings("ignore")         
 
 import sqlite3                             # Built-in Python SQL engine
 import pandas as pd
@@ -69,17 +64,18 @@ from sklearn.metrics import(
     mean_squared_error, r2_score
 )
 
+# mlxtend – association rule mining (Apriori)
+# Install if missing:  pip install mlxtend
 from mlxtend.frequent_patterns import apriori, association_rules
 from mlxtend.preprocessing import TransactionEncoder
 
 
 # SECTION 1 – LOAD DATA
-
 print("=" * 60)
 print("SECTION 1 – LOADING RAW DATA")
 print("=" * 60)
 
-
+# Read each of the three source CSV files.
 uci    = pd.read_csv("uci_heart.csv")
 fr     = pd.read_csv("framingham.csv")
 cardio = pd.read_csv("cardio.csv", sep=";")
@@ -94,9 +90,10 @@ print("\n" + "=" * 60)
 print("SECTION 2 – DATA INTEGRATION")
 print("=" * 60)
 
-
+# ---------------------------------------------------------------------------
 # 2A. CARDIO DATASET
-
+# ---------------------------------------------------------------------------
+# age: originally stored in DAYS → convert to years by dividing by 365
 cardio["age"] = cardio["age"] / 365
 
 # gender: original encoding  1 = female, 2 = male
@@ -117,6 +114,8 @@ cardio["gluc"] = cardio["gluc"].map({1: 85, 2: 110, 3: 140})
 
 # Build cardio_new with the canonical 24-column layout.
 # Columns that the cardio dataset does NOT contain are set to np.nan (missing).
+# Explicit NaN is BETTER than implicit because it makes missingness visible and
+# consistent from the very beginning of the pipeline.
 cardio_new = pd.DataFrame({
     "age":         cardio["age"],
     "gender":      cardio["gender"],
@@ -145,7 +144,9 @@ cardio_new = pd.DataFrame({
     "target":      cardio["cardio"],   # 1 = has cardiovascular disease
 })
 
+# ---------------------------------------------------------------------------
 # 2B. FRAMINGHAM DATASET
+# ---------------------------------------------------------------------------
 # BMI, sysBP, diaBP, cholesterol, glucose, heartRate already in correct units.
 # 'male' column (1=male, 0=female) already matches our canonical gender coding.
 # 'TenYearCHD' = 1 if the patient developed coronary heart disease in 10 years.
@@ -177,7 +178,9 @@ fr_new = pd.DataFrame({
     "target":      fr["TenYearCHD"],
 })
 
+# ---------------------------------------------------------------------------
 # 2C. UCI HEART DISEASE DATASET
+# ---------------------------------------------------------------------------
 # fbs (fasting blood sugar): originally a binary flag (0 = ≤120 mg/dL, 1 = >120)
 # We convert to a representative numeric glucose value for consistency.
 uci["fbs"] = uci["fbs"].map({0: 90, 1: 130})
@@ -252,15 +255,8 @@ for col in cat_cols:
 print(f"Missing values after imputation: {df.isnull().sum().sum()}")
 
 # --- 3D. Outlier Removal with Isolation Forest ---
-# Why Isolation Forest?
-#   We have a high-dimensional dataset (many features). Traditional
-#   univariate methods (IQR, Z-score) treat each column independently
-#   and miss multivariate outliers (e.g., a combination of values that
-#   is unusual even though each individual value looks normal).
-#   Isolation Forest builds random trees that isolate points; points
-#   that need fewer splits to isolate are more likely to be outliers.
-#
-# contamination=0.05 tells the algorithm to flag the most-anomalous 5 %
+
+## contamination=0.05 tells the algorithm to flag the most-anomalous 5 %
 # of rows as outliers.  random_state=42 ensures reproducibility.
 iso = IsolationForest(contamination=0.05, random_state=42)
 
@@ -273,11 +269,7 @@ print(f"Rows removed (outliers): {before - len(df)}")
 print(f"Shape after outlier removal: {df.shape}")
 
 
-# ===========================================================================
 # SECTION 4 – ENCODING
-# Machine-learning models require all inputs to be numeric.
-# We handle two types of categorical variables differently.
-# ===========================================================================
 print("\n" + "=" * 60)
 print("SECTION 4 – ENCODING")
 print("=" * 60)
@@ -308,9 +300,7 @@ print(f"Columns after encoding: {df.shape[1]}")
 print(f"Column list: {list(df.columns)}")
 
 
-# ===========================================================================
 # SECTION 5 – STANDARDISATION
-# ===========================================================================
 print("\n" + "=" * 60)
 print("SECTION 5 – STANDARDISATION")
 print("=" * 60)
@@ -324,9 +314,6 @@ num_cols = ["age", "BMI", "sysBP", "diaBP",
             "cholesterol", "heartRate", "thalach", "oldpeak", "glucose"]
 
 # StandardScaler transforms each column to zero mean and unit variance:
-#   z = (x - mean) / std
-# This prevents features with large magnitudes (e.g. cholesterol ~200)
-# from dominating features with small magnitudes (e.g. age ~50).
 scaler = StandardScaler()
 df[num_cols] = scaler.fit_transform(df[num_cols])
 
@@ -347,7 +334,7 @@ print(df_scaled[num_cols].describe().round(2))
 
 
 # ===========================================================================
-# SECTION 6 – FEATURE SELECTION (optional – currently using all features)
+# SECTION 6 – FEATURE SELECTION (optional-currently using all feature)
 # ===========================================================================
 # SelectKBest with f_classif scores each feature using the ANOVA F-statistic
 # between the feature and the target variable.  The top k features are kept.
@@ -363,15 +350,14 @@ print(df_scaled[num_cols].describe().round(2))
 # selected_cols = df_scaled.drop("target", axis=1).columns[selector.get_support()]
 # final_df = pd.DataFrame(X_selected, columns=selected_cols)
 # final_df["target"] = df_scaled["target"].values
-# --------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 # Use all features for now
 final_df = df_scaled.copy()
 
 
-# ===========================================================================
+
 # SECTION 7 – SAVE FINAL DATASET
-# ===========================================================================
 print("\n" + "=" * 60)
 print("SECTION 7 – SAVING FINAL DATASET")
 print("=" * 60)
@@ -382,7 +368,6 @@ print(f"  Shape : {final_df.shape}")
 print(final_df.head(3))
 
 
-# ===========================================================================
 # SECTION 8 – STAR SCHEMA DATA WAREHOUSE (SQLite)
 # The project report specifies a Star Schema with:
 #   • Fact Table   : heart_disease_fact
@@ -390,7 +375,6 @@ print(final_df.head(3))
 #
 # We implement this using Python's built-in sqlite3 module so no external
 # database server is needed.
-# ===========================================================================
 print("\n" + "=" * 60)
 print("SECTION 8 – STAR SCHEMA DATA WAREHOUSE")
 print("=" * 60)
@@ -477,7 +461,7 @@ for i, row in final_df.reset_index(drop=True).iterrows():
     cid  = i + 1
     lid  = i + 1
 
-    # --- dim_patient row ---
+    # -dim_patient row 
     patient_rows.append((
         pid,
         row.get("age", None),
@@ -488,7 +472,7 @@ for i, row in final_df.reset_index(drop=True).iterrows():
         int(row.get("stroke", 0)),
     ))
 
-    # --- dim_clinical row ---
+    # -dim_clinical row 
     clinical_rows.append((
         cid,
         row.get("sysBP", None),
@@ -499,7 +483,7 @@ for i, row in final_df.reset_index(drop=True).iterrows():
         int(row.get("BPMeds", 0)),
     ))
 
-    # --- dim_lifestyle row ---
+    # -dim_lifestyle row
     lifestyle_rows.append((
         lid,
         int(row.get("smoke", 0)),
@@ -534,11 +518,9 @@ for tbl in ["dim_patient", "dim_clinical", "dim_lifestyle", "heart_disease_fact"
     print(f"  {tbl}: {count} rows")
 
 
-# ===========================================================================
 # SECTION 9 – OLAP QUERIES (Multidimensional Analysis)
 # OLAP (Online Analytical Processing) lets us slice and roll-up the fact
 # table across multiple dimensions to discover aggregate patterns.
-# ===========================================================================
 print("\n" + "=" * 60)
 print("SECTION 9 – OLAP / MULTIDIMENSIONAL QUERIES")
 print("=" * 60)
@@ -704,13 +686,12 @@ print("\nTop-10 Feature Importances (Random Forest):")
 print(feat_imp.round(4))
 
 
-# ===========================================================================
 # SECTION 12 – REGRESSION
 # We predict the continuous 'cholesterol' column (mg/dL) using all other
-# features.  Note: the cholesterol column in df_scaled is z-scored, so
+# features as it is one of the few truly continuous, clinically meaningful values.
+# Note: the cholesterol column in df_scaled is z-scored, so
 # predicted values will also be in standardised units.
 # Metrics: RMSE (Root Mean Squared Error) and R² (coefficient of determination)
-# ===========================================================================
 print("\n" + "=" * 60)
 print("SECTION 12 – REGRESSION (Predicting Cholesterol)")
 print("=" * 60)
@@ -725,7 +706,7 @@ X_reg_tr, X_reg_te, y_reg_tr, y_reg_te = train_test_split(
     X_reg, y_reg, test_size=0.2, random_state=42
 )
 
-# --- 12A. Simple Linear Regression on single feature (sysBP) ---
+# - 12A. Simple Linear Regression on single feature (sysBP)
 # This is for interpretability: higher systolic BP is expected to correlate
 # with higher cholesterol.
 lr_simple = LinearRegression()
@@ -738,7 +719,7 @@ print(f"\nSimple Linear Regression (sysBP → cholesterol):")
 print(f"  RMSE : {rmse_simple:.4f}  (lower is better)")
 print(f"  R²   : {r2_simple:.4f}   (1.0 = perfect, 0.0 = baseline mean)")
 
-# --- 12B. Multiple Linear Regression (all features) ---
+# - 12B. Multiple Linear Regression (all features) 
 # Using all features gives the model more signals to work with.
 lr_multi = LinearRegression()
 lr_multi.fit(X_reg_tr, y_reg_tr)
@@ -758,12 +739,10 @@ print("Top 5 negative predictors of cholesterol:")
 print(coef_series.nsmallest(5).round(4))
 
 
-# ===========================================================================
 # SECTION 13 – CLUSTERING (K-Means)
 # K-Means partitions patients into k groups by minimising the within-cluster
 # sum of squared distances to the cluster centroid.
-# We use 3 clusters matching the project report: Low / Medium / High risk.
-# ===========================================================================
+# We use 3 clusters: Low / Medium / High risk.
 print("\n" + "=" * 60)
 print("SECTION 13 – CLUSTERING (K-Means, k=3)")
 print("=" * 60)
@@ -802,13 +781,11 @@ print(final_df.groupby("risk_label")["target"].agg(["count", "mean"]).round(3))
 print("\nCluster centroids (standardised scale, selected features):")
 print(pd.DataFrame(kmeans.cluster_centers_, columns=cluster_features).round(2))
 
-# ===========================================================================
 # SECTION 13B – K-MEANS CLUSTER VISUALISATIONS
 # Three graphs that visually show what the clustering found:
 #   Graph 1 – PCA Scatter   : patients plotted in 2D, coloured by cluster
 #   Graph 2 – Disease Rate   : how many in each cluster actually have disease
 #   Graph 3 – Centroid Heatmap: the average feature value for each cluster
-# ===========================================================================
 print("\n" + "=" * 60)
 print("SECTION 13B – K-MEANS CLUSTER VISUALISATIONS")
 print("=" * 60)
@@ -816,7 +793,7 @@ print("=" * 60)
 # Colour and label for each cluster (Low / Medium / High risk)
 cluster_colors = {"Low Risk": "#4CAF50", "Medium Risk": "#FF9800", "High Risk": "#F44336"}
 
-# ── GRAPH 1: PCA Scatter Plot ────────────────────────────────────────────────
+# ── GRAPH 1: PCA Scatter Plot 
 # K-Means clusters in high-dimensional space are hard to see directly.
 # PCA (Principal Component Analysis) compresses all features into 2 numbers
 # (PC1 and PC2) that capture the most variance, so we can plot each patient
@@ -847,7 +824,7 @@ plt.savefig("graph1_pca_scatter.png", dpi=150)
 plt.show()
 print("Graph 1 saved: graph1_pca_scatter.png")
 
-# ── GRAPH 2: Disease Prevalence per Cluster ──────────────────────────────────
+# ── GRAPH 2: Disease Prevalence per Cluster 
 # Each bar shows the percentage of patients IN that cluster who actually have
 # heart disease (target=1).  A good clustering should show Low Risk having a
 # low disease rate and High Risk having a high disease rate.
@@ -884,7 +861,7 @@ plt.savefig("graph2_disease_prevalence.png", dpi=150)
 plt.show()
 print("Graph 2 saved: graph2_disease_prevalence.png")
 
-# ── GRAPH 3: Centroid Heatmap ─────────────────────────────────────────────────
+# ── GRAPH 3: Centroid Heatmap 
 # The centroid is the "average patient" for each cluster.
 # This heatmap shows each feature's standardised centroid value, making it
 # easy to see which features are high or low for each risk group.
@@ -919,8 +896,6 @@ print("Graph 3 saved: graph3_centroid_heatmap.png")
 print("\nAll 3 cluster graphs generated successfully.")
 
 
-
-# ===========================================================================
 # SECTION 14 – ASSOCIATION RULE MINING (Apriori)
 # Association rule mining finds patterns like:
 #   "If a patient smokes AND has hypertension, they are likely to have diabetes"
@@ -929,7 +904,6 @@ print("\nAll 3 cluster graphs generated successfully.")
 #   Confidence – P(consequent | antecedent)
 #   Lift       – how much more likely the consequent is given the antecedent
 #                vs. the base rate (lift > 1 means positive association)
-# ===========================================================================
 print("\n" + "=" * 60)
 print("SECTION 14 – ASSOCIATION RULE MINING (Apriori)")
 print("=" * 60)
@@ -974,11 +948,9 @@ else:
     )
 
 
-# ===========================================================================
 # SECTION 15 – RISK SCORING SYSTEM
 # A simple interpretable risk score (0–100) that summarises the model outputs
 # and could be shown to a clinician or patient.
-# ===========================================================================
 print("\n" + "=" * 60)
 print("SECTION 15 – RISK SCORING SYSTEM")
 print("=" * 60)
@@ -1009,9 +981,7 @@ print("\nSample risk scores (first 10 test patients):")
 print(risk_output.head(10).to_string(index=False))
 
 
-# ===========================================================================
 # SECTION 16 – FINAL SUMMARY
-# ===========================================================================
 print("\n" + "=" * 60)
 print("SECTION 16 – FINAL SUMMARY")
 print("=" * 60)
